@@ -1,8 +1,10 @@
 import pygame
-import random
+import os  # For checking file existence
+import random  # Added for random pipe heights
 
-# Initialize Pygame
+# Initialize Pygame and mixer for sound
 pygame.init()
+pygame.mixer.init()
 
 # Screen dimensions
 SCREEN_WIDTH = 800
@@ -15,48 +17,80 @@ WHITE = (255, 255, 255)
 BLACK = (0, 0, 0)
 GREEN = (0, 255, 0)
 BROWN = (139, 69, 19)  # Ground color
+RED = (255, 0, 0)  # Fallback for Mario
+
+# Load sounds (add your own .wav files)
+try:
+    jump_sound = pygame.mixer.Sound('jump.wav')
+except:
+    jump_sound = None
 
 # Mario class
 class Mario:
     def __init__(self):
         self.x = 100
         self.y = SCREEN_HEIGHT - 100  # Starts on the ground
-        self.velocity = 0
+        self.velocity_x = 0  # Horizontal velocity
+        self.velocity_y = 0  # Vertical velocity
         self.gravity = 0.5
-        self.jump_strength = -15  # Set to -15 for average jump height (balanced)
+        self.jump_strength = -15
+        self.move_speed = 5  # Horizontal speed
         self.on_ground = False
-        self.image = pygame.image.load('mario.png')  # Replace with your sprite
-        self.image = pygame.transform.scale(self.image, (50, 50))
+        self.facing_right = True  # For potential sprite flipping
+        # Try to load image, fallback to rectangle
+        if os.path.exists('mario.png'):
+            self.image = pygame.image.load('mario.png')
+            self.image = pygame.transform.scale(self.image, (50, 50))
+        else:
+            self.image = pygame.Surface((50, 50))
+            self.image.fill(RED)
         self.rect = self.image.get_rect()
         self.rect.center = (self.x, self.y)
 
     def jump(self):
         if self.on_ground:
-            self.velocity = self.jump_strength
+            self.velocity_y = self.jump_strength
             self.on_ground = False
+            if jump_sound:
+                jump_sound.play()
+
+    def move_left(self):
+        self.velocity_x = -self.move_speed
+        self.facing_right = False
+
+    def move_right(self):
+        self.velocity_x = self.move_speed
+        self.facing_right = True
+
+    def stop_horizontal(self):
+        self.velocity_x = 0
 
     def update(self, pipes, ground_height, camera_y):
-        self.velocity += self.gravity
-        self.y += self.velocity
+        # Apply gravity and movement
+        self.velocity_y += self.gravity
+        self.x += self.velocity_x
+        self.y += self.velocity_y
+        # Keep Mario on screen horizontally
+        self.x = max(0, min(self.x, SCREEN_WIDTH - self.rect.width))
         self.rect.center = (self.x, self.y)
 
-        # Check collision with ground (ground at y = SCREEN_HEIGHT - ground_height + camera_y)
+        # Check collision with ground
         ground_y = SCREEN_HEIGHT - ground_height + camera_y
         if self.y + self.rect.height // 2 >= ground_y:
             self.y = ground_y - self.rect.height // 2
-            self.velocity = 0
+            self.velocity_y = 0
             self.on_ground = True
 
         # Check collision with pipes
         for pipe in pipes:
             if pipe.collide(self):
-                return True  # Game over on collision
+                return True  # Game over
         return False
 
     def draw(self, screen, camera_y):
         screen.blit(self.image, (self.rect.x, self.rect.y - camera_y))
 
-# Pipe class (now as platforms with dangerous collision)
+# Pipe class
 class Pipe:
     def __init__(self, x, height):
         self.x = x
@@ -66,7 +100,7 @@ class Pipe:
         self.rect = pygame.Rect(self.x, SCREEN_HEIGHT - height, self.width, self.height)
 
     def update(self):
-        self.x -= 5  # Pipe movement speed
+        self.x -= 5
         self.rect.x = self.x
 
     def draw(self, screen, camera_y):
@@ -74,15 +108,14 @@ class Pipe:
 
     def collide(self, mario):
         if mario.rect.colliderect(self.rect):
-            # If Mario is falling and only touches the top (landing), it's okay
-            # Increased buffer from 10 to 30 for more lenient landing
-            if mario.velocity > 0 and mario.rect.bottom <= self.rect.top + 30:
+            # Allow landing if falling and bottom is near top of pipe
+            if mario.velocity_y > 0 and mario.rect.bottom <= self.rect.top + 20:  # Tighter buffer
                 mario.y = self.rect.top - mario.rect.height // 2
-                mario.velocity = 0
+                mario.velocity_y = 0
                 mario.on_ground = True
-                return False  # Not game over
+                return False
             else:
-                return True  # Game over on touching sides or bottom
+                return True
         return False
 
 # Main game function
@@ -91,11 +124,12 @@ def main():
     mario = Mario()
     pipes = []
     score = 0
-    ground_height = 50  # Ground height
+    ground_height = 50
     font = pygame.font.SysFont(None, 36)
-    current_height = 100  # Initial pipe height
-    camera_y = 0  # Camera offset
-    camera_active = False  # Camera not following at start
+    camera_y = 0
+    camera_active = False
+    pipe_count = 0  # Counter for pipes created
+    last_height = 0  # To track the height of the last pipe for smooth generation
 
     running = True
     while running:
@@ -107,21 +141,42 @@ def main():
             if event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_SPACE:
                     mario.jump()
-                    # Removed camera activation on first jump
+                if event.key == pygame.K_q:  # Quit key
+                    running = False
+            if event.type == pygame.KEYUP:
+                if event.key in (pygame.K_a, pygame.K_d):
+                    mario.stop_horizontal()
 
-        # Update camera: follows Mario only after activation (now after score >= 10)
+        # Handle continuous movement
+        keys = pygame.key.get_pressed()
+        if keys[pygame.K_a]:
+            mario.move_left()
+        if keys[pygame.K_d]:
+            mario.move_right()
+
+        # Update camera
         if camera_active:
             camera_y = max(0, mario.y - SCREEN_HEIGHT // 2)
 
         # Update Mario
         if mario.update(pipes, ground_height, camera_y):
-            running = False  # Game over on collision
+            running = False
 
-        # Generate pipes (reduced distance to 250 pixels between end of one and start of next for closer pipes)
+        # Generate pipes: first 3 as a ladder, then random with height difference <= 100 pixels
         if not pipes or pipes[-1].x + pipes[-1].width + 250 <= SCREEN_WIDTH:
-            pipes.append(Pipe(SCREEN_WIDTH, current_height))
-            current_height += 30  # Height gradually increases by 30 pixels
-            # Removed the cap: pipes will keep getting taller indefinitely
+            pipe_count += 1
+            if pipe_count <= 3:
+                # Ladder heights: 100, 200, 300
+                ladder_heights = [100, 200, 300]
+                height = ladder_heights[pipe_count - 1]
+                last_height = height  # Update last_height after ladder
+            else:
+                # Random height with difference <= 100 from last_height
+                min_height = max(100, last_height - 100)
+                max_height = min(SCREEN_HEIGHT - 100, last_height + 100)
+                height = random.randint(min_height, max_height)
+                last_height = height  # Update for next pipe
+            pipes.append(Pipe(SCREEN_WIDTH, height))
 
         # Update and draw pipes
         for pipe in pipes[:]:
@@ -130,13 +185,12 @@ def main():
             if pipe.x + pipe.width < 0:
                 pipes.remove(pipe)
                 score += 1
-                # Activate camera only after score reaches 10
                 if score >= 10:
                     camera_active = True
 
-        # Draw ground (ground always visible, but camera rises)
+        # Draw ground
         ground_y = SCREEN_HEIGHT - ground_height - camera_y
-        if ground_y < SCREEN_HEIGHT:  # Draw only if ground is visible
+        if ground_y < SCREEN_HEIGHT:
             pygame.draw.rect(screen, BROWN, (0, ground_y, SCREEN_WIDTH, ground_height))
 
         # Draw Mario
@@ -151,20 +205,29 @@ def main():
 
     # Game over screen
     screen.fill(BLACK)
-    game_over_text = font.render("Game Over! Press R to Restart", True, WHITE)
-    screen.blit(game_over_text, (SCREEN_WIDTH // 2 - 150, SCREEN_HEIGHT // 2))
+    game_over_text = font.render("Game Over! Press R to Restart or Q to Quit", True, WHITE)
+    screen.blit(game_over_text, (SCREEN_WIDTH // 2 - 200, SCREEN_HEIGHT // 2))
     pygame.display.flip()
 
     waiting = True
     while waiting:
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
-                waiting = False
+                return False
             if event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_r:
-                    return True  # Signal to restart instead of recursive call
-
-    return False  # Signal to quit
+                    # Reset variables instead of recreating
+                    mario.__init__()
+                    pipes.clear()
+                    score = 0
+                    camera_y = 0
+                    camera_active = False
+                    pipe_count = 0  # Reset pipe counter
+                    last_height = 0  # Reset last height
+                    return True
+                if event.key == pygame.K_q:
+                    return False
+    return False
 
 if __name__ == "__main__":
     while True:
