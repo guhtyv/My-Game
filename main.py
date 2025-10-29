@@ -25,101 +25,15 @@ try:
 except:
     jump_sound = None
 
-# Mario class
-class Mario:
-    def __init__(self):
-        self.x = 100
-        self.y = SCREEN_HEIGHT - 100  # Starts on the ground
-        self.velocity_x = 0  # Horizontal velocity
-        self.velocity_y = 0  # Vertical velocity
-        self.gravity = 0.5
-        self.jump_strength = -15
-        self.move_speed = 5  # Horizontal speed
-        self.on_ground = False
-        self.facing_right = True  # For potential sprite flipping
-        # Try to load image, fallback to rectangle
-        if os.path.exists('mario.png'):
-            self.image = pygame.image.load('mario.png')
-            self.image = pygame.transform.scale(self.image, (50, 50))
-        else:
-            self.image = pygame.Surface((50, 50))
-            self.image.fill(RED)
-        self.rect = self.image.get_rect()
-        self.rect.center = (self.x, self.y)
-
-    def jump(self):
-        if self.on_ground:
-            self.velocity_y = self.jump_strength
-            self.on_ground = False
-            if jump_sound:
-                jump_sound.play()
-
-    def move_left(self):
-        self.velocity_x = -self.move_speed
-        self.facing_right = False
-
-    def move_right(self):
-        self.velocity_x = self.move_speed
-        self.facing_right = True
-
-    def stop_horizontal(self):
-        self.velocity_x = 0
-
-    def update(self, pipes, ground_height, camera_y):
-        # Apply gravity and movement
-        self.velocity_y += self.gravity
-        self.x += self.velocity_x
-        self.y += self.velocity_y
-        # Keep Mario on screen horizontally
-        self.x = max(0, min(self.x, SCREEN_WIDTH - self.rect.width))
-        self.rect.center = (self.x, self.y)
-
-        # Check collision with ground
-        ground_y = SCREEN_HEIGHT - ground_height + camera_y
-        if self.y + self.rect.height // 2 >= ground_y:
-            self.y = ground_y - self.rect.height // 2
-            self.velocity_y = 0
-            self.on_ground = True
-
-        # Check collision with pipes
-        for pipe in pipes:
-            if pipe.collide(self):
-                return True  # Game over
-        return False
-
-    def draw(self, screen, camera_y):
-        screen.blit(self.image, (self.rect.x, self.rect.y - camera_y))
-
-# Pipe class
-class Pipe:
-    def __init__(self, x, height):
-        self.x = x
-        self.width = 80
-        self.height = height
-        self.color = GREEN
-        self.rect = pygame.Rect(self.x, SCREEN_HEIGHT - height, self.width, self.height)
-
-    def update(self):
-        self.x -= 5
-        self.rect.x = self.x
-
-    def draw(self, screen, camera_y):
-        pygame.draw.rect(screen, self.color, (self.rect.x, self.rect.y - camera_y, self.rect.width, self.rect.height))
-
-    def collide(self, mario):
-        if mario.rect.colliderect(self.rect):
-            # Allow landing if falling and bottom is near top of pipe
-            if mario.velocity_y > 0 and mario.rect.bottom <= self.rect.top + 20:  # Tighter buffer
-                mario.y = self.rect.top - mario.rect.height // 2
-                mario.velocity_y = 0
-                mario.on_ground = True
-                return False
-            else:
-                return True
-        return False
-
 # Main game function
 def main():
+    # Load and play background music (add your own .mp3 or .wav file)
+    try:
+        pygame.mixer.music.load('background.mp3')  # Replace with your music file
+        pygame.mixer.music.play(-1)  # Loop indefinitely
+    except:
+        pass  # If no music file, continue without it
+
     clock = pygame.time.Clock()
     mario = Mario()
     pipes = []
@@ -216,6 +130,8 @@ def main():
                 return False
             if event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_r:
+                    # Stop music on restart (optional, to reset)
+                    pygame.mixer.music.stop()
                     # Reset variables instead of recreating
                     mario.__init__()
                     pipes.clear()
@@ -228,6 +144,99 @@ def main():
                 if event.key == pygame.K_q:
                     return False
     return False
+
+# Mario class
+class Mario:
+    def __init__(self):
+        self.x = 100
+        self.y = SCREEN_HEIGHT - 100  # Starts on the ground
+        self.velocity_x = 0  # Horizontal velocity
+        self.velocity_y = 0  # Vertical velocity
+        self.gravity = 0.5
+        self.jump_strength = -15
+        self.move_speed = 5  # Horizontal speed
+        self.on_ground = False
+        self.facing_right = True  # For potential sprite flipping
+        # Try to load image, fallback to rectangle
+        if os.path.exists('mario.png'):
+            self.image = pygame.image.load('mario.png')
+            self.image = pygame.transform.scale(self.image, (50, 50))
+        else:
+            self.image = pygame.Surface((50, 50))
+            self.image.fill(RED)
+        self.rect = self.image.get_rect()
+        self.rect.center = (self.x, self.y)
+
+    def jump(self):
+        if self.on_ground:
+            self.velocity_y = self.jump_strength
+            self.on_ground = False
+            if jump_sound:
+                jump_sound.play()
+
+    def move_left(self):
+        self.velocity_x = -self.move_speed
+        self.facing_right = False
+
+    def move_right(self):
+        self.velocity_x = self.move_speed
+        self.facing_right = True
+
+    def stop_horizontal(self):
+        self.velocity_x = 0
+
+    def update(self, pipes, ground_height, camera_y):
+        # Apply gravity and movement
+        self.velocity_y += self.gravity
+        self.x += self.velocity_x
+        self.y += self.velocity_y
+        # Keep Mario on screen horizontally
+        self.x = max(0, min(self.x, SCREEN_WIDTH - self.rect.width))
+        self.rect.center = (self.x, self.y)
+
+        # Check collision with ground
+        ground_y = SCREEN_HEIGHT - ground_height + camera_y
+        if self.y + self.rect.height // 2 >= ground_y:
+            self.y = ground_y - self.rect.height // 2
+            self.velocity_y = 0
+            self.on_ground = True
+
+        # Check collision with pipes
+        for pipe in pipes:
+            if pipe.collide(self):
+                return True  # Game over
+        return False
+
+    def draw(self, screen, camera_y):
+        screen.blit(self.image, (self.rect.x, self.rect.y - camera_y))
+
+# Pipe class
+class Pipe:
+    def __init__(self, x, height):
+        self.x = x
+        self.width = 80
+        self.height = height
+        self.color = GREEN
+        self.rect = pygame.Rect(self.x, SCREEN_HEIGHT - height, self.width, self.height)
+
+    def update(self):
+        self.x -= 5
+        self.rect.x = self.x
+
+    def draw(self, screen, camera_y):
+        pygame.draw.rect(screen, self.color, (self.rect.x, self.rect.y - camera_y, self.rect.width, self.rect.height))
+
+    def collide(self, mario):
+        if mario.rect.colliderect(self.rect):
+            # Allow landing if falling and bottom is near top of pipe
+            if mario.velocity_y > 0 and mario.rect.bottom <= self.rect.top + 20:  # Tighter buffer
+                mario.y = self.rect.top - mario.rect.height // 2
+                mario.velocity_y = 0
+                mario.on_ground = True
+                return False
+            else:
+                return True
+        return False
 
 if __name__ == "__main__":
     while True:
